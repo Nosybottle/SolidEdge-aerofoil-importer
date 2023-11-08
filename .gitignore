@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+/.idea/
+/venv/
+
+*pyinstaller*
+*.spec
+/tests/
+/dist/
+/build/
