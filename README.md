@@ -1,4 +1,4 @@
-#Solid Edge aerofoil importer
+# Solid Edge aerofoil importer
 
 Tool used to import .dat aerofoil files. Currently works only for part documents.
 
