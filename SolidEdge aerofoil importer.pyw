@@ -6,13 +6,13 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import win32com.client
 from pywintypes import com_error
+from typing import Union
 
 _DELAY = 0.05  # seconds
 _TIMEOUT = 5.0  # seconds
 
 digit_pattern = r"-?\d+\.\d{6}"
 aerofoil_match = re.compile(fr"^\s*({digit_pattern})\s*({digit_pattern})\s*$", flags = re.MULTILINE)
-float_match = re.compile(r"^([+-]?)\d*(?:[.,]\d*)?$")
 
 named_planes = {0: "X/Y", 1: "Y/Z", 2: "X/Z"}
 
@@ -84,27 +84,54 @@ class COMWrapper:
 
 class FloatEntry(ttk.Entry):
     """Entry allowing insertion of only float values"""
+    _float_match = re.compile(r"^([+-]?)\d*(?:[.,]\d*)?$")
+    _default_values = (".", "-", "+", "-.", "+.")
 
     def __init__(self, master, default_value = 0, **kwargs):
         super().__init__(master, **kwargs)
 
+        self.default_value = default_value
+        self.variable = tk.StringVar()
+        self.variable.trace_add("write", self.on_change)
+
         vcm = (self.register(self.validate_number), "%P")
-        self.config(validate = "key", validatecommand = vcm)
 
-        self.insert("end", str(default_value))
+        self.config(validate = "key", validatecommand = vcm, textvariable = self.variable)
+        self.insert("end", default_value)
+        self.bind("<FocusOut>", self.on_focus_out)
 
-    @staticmethod
-    def validate_number(after: str) -> bool:
+    def validate_number(self, after: str) -> bool:
         """Validate if given number is float"""
-        match = float_match.match(after)
-        return match is not None
+        match = self._float_match.match(after)
+        if match is not None:
+            return True
+        return False
+
+    def _get_raw_value(self) -> str:
+        """Get raw and stripped value"""
+        return self.variable.get().lstrip("+").replace(",", ".")
 
     def get(self) -> float:
         """Get current value as an int"""
-        value = super().get().lstrip("+").replace(",", ".")
-        if not value or value in (".", "-.", "+."):
+        value = self._get_raw_value()
+        if not value or value in self._default_values:
             return 0
         return float(value)
+
+    def on_change(self, *_):
+        """When entry is changed generate an event"""
+        self.event_generate("<<EntryChanged>>")
+
+    def on_focus_out(self, *_) -> None:
+        """When focusing out of widget check if it has "zero-like" value and if so, set it to 0"""
+        value = self._get_raw_value()
+        if not value or value in self._default_values:
+            self.variable.set(self.default_value)
+
+
+class PositiveFloatEntry(FloatEntry):
+    _float_match = re.compile(r"^([+]?)\d*(?:[.,]\d*)?$")
+    _default_values = (".",  "+", "+.")
 
 
 class MainApplication(ttk.Frame):
@@ -127,7 +154,7 @@ class MainApplication(ttk.Frame):
 
         self.f_modify_groups = ttk.Frame(self)
         self.f_move = ttk.LabelFrame(self.f_modify_groups, text = "Move [mm]")
-        self.f_scale = ttk.LabelFrame(self.f_modify_groups, text = "Size [mm]")
+        self.f_scale = ttk.LabelFrame(self.f_modify_groups, text = "Size [mm], [-]")
         self.f_rotate = ttk.LabelFrame(self.f_modify_groups, text = "Rotate [°]")
         self.f_mirror = ttk.LabelFrame(self.f_modify_groups, text = "Mirror")
         self.f_planes = ttk.LabelFrame(self, text = "Plane")
@@ -150,18 +177,18 @@ class MainApplication(ttk.Frame):
 
         self.l_move_x = ttk.Label(self.f_move, text = "X:")
         self.l_move_y = ttk.Label(self.f_move, text = "Y:")
-        self.e_move_x = FloatEntry(self.f_move, width = 9, justify = "center")
-        self.e_move_y = FloatEntry(self.f_move, width = 9, justify = "center")
+        self.e_move_x = FloatEntry(self.f_move, width = 12, justify = "center")
+        self.e_move_y = FloatEntry(self.f_move, width = 12, justify = "center")
 
-        self.v_scale = tk.StringVar(value = "none")
-        self.rb_scale_none = ttk.Radiobutton(self.f_scale, text = "Default", variable = self.v_scale, value = "none")
-        self.rb_scale_x = ttk.Radiobutton(self.f_scale, text = "W:", variable = self.v_scale, value = "width")
-        self.rb_scale_y = ttk.Radiobutton(self.f_scale, text = "H:", variable = self.v_scale, value = "height")
-        self.e_scale_x = FloatEntry(self.f_scale, width = 9, justify = "center")
-        self.e_scale_y = FloatEntry(self.f_scale, width = 9, justify = "center")
+        self.v_size_x = tk.BooleanVar(value = 0)
+        self.v_scale_y = tk.BooleanVar(value = 0)
+        self.cb_size_x = ttk.Checkbutton(self.f_scale, text = "Width:", variable = self.v_size_x)
+        self.cb_scale_y = ttk.Checkbutton(self.f_scale, text = "Y scale:", variable = self.v_scale_y)
+        self.e_size_x = PositiveFloatEntry(self.f_scale, width = 6, justify = "center", default_value = 100)
+        self.e_scale_y = PositiveFloatEntry(self.f_scale, width = 6, justify = "center", default_value = 1)
 
         self.l_rotate = ttk.Label(self.f_rotate, text = "\u27f3:")
-        self.e_rotate = FloatEntry(self.f_rotate, width = 9, justify = "center")
+        self.e_rotate = FloatEntry(self.f_rotate, width = 12, justify = "center")
 
         self.v_mirror = tk.StringVar(value = "none")
         self.rb_mirror_none = ttk.Radiobutton(self.f_mirror, text = "None", variable = self.v_mirror, value = "none")
@@ -172,14 +199,16 @@ class MainApplication(ttk.Frame):
 
         # Trace selected radio buttons
         self.v_placement.trace_add("write", self.on_placement_change)
-        self.v_scale.trace_add("write", self.on_scale_change)
+        self.v_size_x.trace_add("write", self.on_width_x_change)
+        self.v_scale_y.trace_add("write", self.on_scale_y_change)
 
         # Init other parts of the window
         self.layout_widgets()
-        self.on_scale_change()
+        self.on_width_x_change()
+        self.on_scale_y_change()
 
         # Bindings
-        self.focus_set()  # Grab focus so that FocusIn is called, else it would he noticed only by the root window
+        self.focus_set()  # Grab focus so that FocusIn is called, else it would be noticed only by the root window
         self.bind("<FocusIn>", self.reload_se)
 
     def layout_widgets(self) -> None:
@@ -207,10 +236,9 @@ class MainApplication(ttk.Frame):
         self.e_move_x.grid(row = 0, column = 1, sticky = "e", padx = (2, 4))
         self.e_move_y.grid(row = 1, column = 1, sticky = "e", padx = (2, 4), pady = 4)
 
-        self.rb_scale_none.grid(row = 0, column = 0, columnspan = 2, sticky = "w", padx = (4, 2))
-        self.rb_scale_x.grid(row = 1, column = 0, sticky = "w", padx = (4, 2), pady = (4, 0))
-        self.rb_scale_y.grid(row = 2, column = 0, sticky = "w", padx = (4, 2))
-        self.e_scale_x.grid(row = 1, column = 1, sticky = "e", padx = (2, 4), pady = (4, 0))
+        self.cb_size_x.grid(row = 1, column = 0, sticky = "w", padx = (4, 2), pady = (4, 0))
+        self.cb_scale_y.grid(row = 2, column = 0, sticky = "w", padx = (4, 2))
+        self.e_size_x.grid(row = 1, column = 1, sticky = "e", padx = (2, 4), pady = (4, 0))
         self.e_scale_y.grid(row = 2, column = 1, sticky = "e", padx = (2, 4), pady = 4)
 
         self.l_rotate.pack(side = "left", padx = (4, 2), pady = (0, 4))
@@ -230,10 +258,13 @@ class MainApplication(ttk.Frame):
         for widget in self.f_sketches.winfo_children():
             widget.config(state = sketch_state)
 
-    def on_scale_change(self, *_) -> None:
-        """Enable entry widget cor currently selected scale option"""
-        self.e_scale_x.config(state = "normal" if self.v_scale.get() == "width" else "disabled")
-        self.e_scale_y.config(state = "normal" if self.v_scale.get() == "height" else "disabled")
+    def on_width_x_change(self, *_) -> None:
+        """Enable/disable width entry"""
+        self.e_size_x.config(state = "normal" if self.v_size_x.get() else "disabled")
+
+    def on_scale_y_change(self, *_) -> None:
+        """Enable/disable y scale entry"""
+        self.e_scale_y.config(state = "normal" if self.v_scale_y.get() else "disabled")
 
     def reload_se(self, *_) -> None:
         """Reload SolidEdge connection. Get new active document and load current planes and sketches"""
@@ -241,6 +272,7 @@ class MainApplication(ttk.Frame):
         self.doc = None
         self.planes.clear()
         self.sketches.clear()
+        self.rb_current.config(state = "disabled")
         for widget in self.f_planes.winfo_children():
             widget.destroy()
         for widget in self.f_sketches.winfo_children():
@@ -260,7 +292,6 @@ class MainApplication(ttk.Frame):
         if self.app.ActiveEnvironment == "LayoutInPart":
             self.rb_current.config(state = "normal")
         else:
-            self.rb_current.config(state = "disabled")
             if self.v_placement.get() == "current":
                 self.v_placement.set("new")
 
@@ -342,22 +373,28 @@ class MainApplication(ttk.Frame):
         # Draw in selected sketch
         return self.sketches[self.v_sketches.get()].Profile
 
-    def get_transformed_aerofoil(self) -> list:
+    def get_transformed_aerofoil(self) -> Union[None, list]:
         """Scale, mirror, rotate, move aerofoil based on user inputs"""
         aerofoil = self.aerofoil
 
-        # Scale
-        if self.v_scale.get() in ("width", "height"):
-            if self.v_scale.get() == "width":
-                axis = 0
-                target = self.e_scale_x.get()
-            else:
-                axis = 1
-                target = self.e_scale_y.get()
-            min_val = min(aerofoil, key = lambda x: x[axis])[axis]
-            max_val = max(aerofoil, key = lambda x: x[axis])[axis]
-            scale = target / (1000 * (max_val - min_val))
-            aerofoil = [(x * scale, y * scale) for x, y in aerofoil]
+        # X width
+        if self.v_size_x.get():
+            target = self.e_size_x.get()
+            if target <= 0:
+                messagebox.showwarning("Zero width", "Desired width must be non-zero positive value.")
+                return None
+            min_x = min(aerofoil, key = lambda x: x[0])[0]
+            max_x = max(aerofoil, key = lambda x: x[0])[0]
+            scale = target / (1000 * (max_x - min_x))
+            aerofoil = [(x * scale, y) for x, y in aerofoil]
+
+        # Y scale
+        if self.v_scale_y.get():
+            scale = self.e_scale_y.get()
+            if scale <= 0:
+                messagebox.showwarning("Zero scale", "Desired scale must be non-zero positive value.")
+                return None
+            aerofoil = [(x, y * scale) for x, y in aerofoil]
 
         # Mirror
         if self.v_mirror.get() in ("horizontal", "vertical",):
@@ -390,6 +427,9 @@ class MainApplication(ttk.Frame):
             return
 
         aerofoil = self.get_transformed_aerofoil()
+        if aerofoil is None:
+            return
+
         profile = self.get_se_sketch_profile()
         splines = profile.BSplineCurves2d
         splines.AddByPoints(4, len(self.aerofoil), aerofoil)
@@ -399,7 +439,6 @@ class MainApplication(ttk.Frame):
 
 
 def main():
-
     # Get app and constants
     try:
         app = win32com.client.GetActiveObject("SolidEdge.Application")
