@@ -272,6 +272,7 @@ class MainApplication(ttk.Frame):
         self.doc = None
         self.planes.clear()
         self.sketches.clear()
+        self.rb_current.config(state = "disabled")
         for widget in self.f_planes.winfo_children():
             widget.destroy()
         for widget in self.f_sketches.winfo_children():
@@ -291,7 +292,6 @@ class MainApplication(ttk.Frame):
         if self.app.ActiveEnvironment == "LayoutInPart":
             self.rb_current.config(state = "normal")
         else:
-            self.rb_current.config(state = "disabled")
             if self.v_placement.get() == "current":
                 self.v_placement.set("new")
 
