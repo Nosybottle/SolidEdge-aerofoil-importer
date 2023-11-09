@@ -386,7 +386,7 @@ class MainApplication(ttk.Frame):
             min_x = min(aerofoil, key = lambda x: x[0])[0]
             max_x = max(aerofoil, key = lambda x: x[0])[0]
             scale = target / (1000 * (max_x - min_x))
-            aerofoil = [(x * scale, y) for x, y in aerofoil]
+            aerofoil = [(x * scale, y * scale) for x, y in aerofoil]
 
         # Y scale
         if self.v_scale_y.get():
