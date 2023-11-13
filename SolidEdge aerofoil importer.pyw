@@ -11,7 +11,7 @@ from typing import Union
 _DELAY = 0.05  # seconds
 _TIMEOUT = 5.0  # seconds
 
-digit_pattern = r"-?\d+\.\d{6}"
+digit_pattern = r"-?\d+\.\d{3,}"
 aerofoil_match = re.compile(fr"^\s*({digit_pattern})\s*({digit_pattern})\s*$", flags = re.MULTILINE)
 
 named_planes = {0: "X/Y", 1: "Y/Z", 2: "X/Z"}
@@ -360,6 +360,7 @@ class MainApplication(ttk.Frame):
 
         else:
             self.aerofoil = []
+            self.l_selected.config(text = "")
             messagebox.showwarning("Unknown DAT file", "Unknown format of .DAT file.\nCannot import aerofoil.")
 
     def get_se_sketch_profile(self):
