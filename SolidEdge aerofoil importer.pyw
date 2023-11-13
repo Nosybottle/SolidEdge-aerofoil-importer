@@ -281,7 +281,7 @@ class MainApplication(ttk.Frame):
         self.f_sketches.config(height = 40)
 
         # Get current document, if it is a Part document
-        if len(list(self.app.Documents)) == 0:
+        if self.app.Documents.Count == 0:
             return
         doc = self.app.ActiveDocument
         if doc.Type != self.constants.igPartDocument:
@@ -349,6 +349,8 @@ class MainApplication(ttk.Frame):
             if not coordinates:
                 continue
             segments.append([(float(x), float(y)) for x, y in coordinates])
+
+        print(segments)
 
         if len(segments) == 1:
             self.aerofoil = segments[0]
