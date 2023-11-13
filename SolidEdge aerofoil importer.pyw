@@ -360,6 +360,7 @@ class MainApplication(ttk.Frame):
 
         else:
             self.aerofoil = []
+            self.l_selected.config(text = "")
             messagebox.showwarning("Unknown DAT file", "Unknown format of .DAT file.\nCannot import aerofoil.")
 
     def get_se_sketch_profile(self):
